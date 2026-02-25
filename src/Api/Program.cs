@@ -74,10 +74,9 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(appSettings.FrontendOrigin)
+        policy.AllowAnyOrigin()
             .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+            .AllowAnyMethod();
     });
 });
 
@@ -91,6 +90,7 @@ builder.Logging.AddJsonConsole();
 
 var app = builder.Build();
 
+app.UseCors();
 app.UseMiddleware<ProblemDetailsMiddleware>();
 
 if (appSettings.EnableSwagger)
@@ -100,7 +100,6 @@ if (appSettings.EnableSwagger)
 }
 
 app.UseStaticFiles();
-app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
