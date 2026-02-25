@@ -4,9 +4,7 @@
 **/node_modules
 **/.vs
 **/.idea
-*.md
 .env
 .env.*
 tests/
 docker-compose.yml
-*.sln
