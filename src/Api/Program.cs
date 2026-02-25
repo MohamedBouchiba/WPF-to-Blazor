@@ -99,10 +99,12 @@ if (appSettings.EnableSwagger)
     app.UseSwaggerUI();
 }
 
+app.UseStaticFiles();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapGet("/docs", () => Results.Redirect("/docs.html")).ExcludeFromDescription();
 app.MapHealthEndpoints();
 app.MapJobEndpoints();
 

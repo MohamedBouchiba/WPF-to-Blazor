@@ -1,0 +1,709 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "WPF-to-Blazor Migration API",
+    "version": "1.0.0",
+    "description": "Backend API for industrializing WPF to Blazor migrations using AI.\n\n## Overview\n\nThis API allows you to:\n1. **Upload** WPF source files (.xaml, .cs, .resx)\n2. **Analyze** the project structure, patterns, and complexity\n3. **Convert** WPF UI + code-behind into Blazor components using AI\n4. **Generate** a migration Playbook (FR/NL)\n5. **Generate** a Training Kit (FR/NL)\n6. **Download** all converted files as a ZIP\n\n## Workflow\n\n```\nPOST /api/jobs              → Create job + upload files\nPOST /api/jobs/{id}/analyze  → AI analyzes WPF patterns\nPOST /api/jobs/{id}/convert  → AI converts to Blazor\nPOST /api/jobs/{id}/playbook → Generate migration playbook\nPOST /api/jobs/{id}/training → Generate training kit\nGET  /api/jobs/{id}/download → Download ZIP\n```\n\n## Authentication\n\nAll endpoints (except `/health`) require a Supabase JWT token.\n\nPass it as a Bearer token:\n```\nAuthorization: Bearer <supabase_access_token>\n```\n\nObtain a token by signing in via Supabase Auth (`supabase.auth.signInWithPassword()` or similar).\n\n## Job Status Flow\n\n```\nCreated → Analyzing → Created (analysis done)\n                    → Failed\nCreated → Converting → Succeeded\n                     → Failed\n```",
+    "contact": {
+      "name": "Team Black - RSVZ",
+      "email": "dev@rsvz.be"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://wpf-to-blazor-production.up.railway.app",
+      "description": "Production (Railway)"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Health check endpoint (no auth required)"
+    },
+    {
+      "name": "Jobs",
+      "description": "Create and manage migration jobs"
+    },
+    {
+      "name": "Analysis",
+      "description": "AI-powered WPF project analysis"
+    },
+    {
+      "name": "Conversion",
+      "description": "AI-powered WPF to Blazor conversion"
+    },
+    {
+      "name": "Documents",
+      "description": "Generate playbook and training kit"
+    },
+    {
+      "name": "Export",
+      "description": "Download and inspect outputs"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Returns API health status. No authentication required.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "healthy" },
+                    "timestamp": { "type": "string", "format": "date-time", "example": "2026-02-26T10:00:00Z" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "post": {
+        "tags": ["Jobs"],
+        "summary": "Create a migration job",
+        "description": "Creates a new migration job and uploads WPF source files.\n\n**Allowed file extensions:** `.xaml`, `.cs`, `.resx`, `.csproj`, `.sln`, `.config`, `.json`, `.xml`, `.razor`, `.css`\n\n**Limits:**\n- Max files per job: `50` (configurable)\n- Max file size: `1 MB` per file (configurable)\n\nThe file `path` must be a relative path (no `..` traversal, no absolute paths).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobRequest" },
+              "examples": {
+                "simple": {
+                  "summary": "Simple WPF app",
+                  "value": {
+                    "name": "MyWpfApp",
+                    "target": "BlazorServer",
+                    "files": [
+                      {
+                        "path": "MainWindow.xaml",
+                        "content": "<Window xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n  <Grid>\n    <Button Content=\"Click me\" Click=\"OnClick\"/>\n  </Grid>\n</Window>"
+                      },
+                      {
+                        "path": "MainWindow.xaml.cs",
+                        "content": "using System.Windows;\nnamespace MyApp {\n  public partial class MainWindow : Window {\n    public MainWindow() { InitializeComponent(); }\n    private void OnClick(object sender, RoutedEventArgs e) { }\n  }\n}"
+                      }
+                    ]
+                  }
+                },
+                "mvvm": {
+                  "summary": "MVVM pattern app",
+                  "value": {
+                    "name": "MvvmApp",
+                    "target": "BlazorWasm",
+                    "files": [
+                      {
+                        "path": "Views/MainView.xaml",
+                        "content": "<UserControl xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">\n  <StackPanel>\n    <TextBox Text=\"{Binding Name}\"/>\n    <Button Command=\"{Binding SaveCommand}\" Content=\"Save\"/>\n  </StackPanel>\n</UserControl>"
+                      },
+                      {
+                        "path": "ViewModels/MainViewModel.cs",
+                        "content": "public class MainViewModel : INotifyPropertyChanged {\n  public string Name { get; set; }\n  public ICommand SaveCommand { get; }\n}"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (empty files, invalid extension, path traversal, file too large)",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" },
+                "example": {
+                  "type": "https://httpstatuses.com/400",
+                  "title": "Validation Error",
+                  "status": 400,
+                  "detail": "File extension not allowed: .exe",
+                  "traceId": "00-abc123-def456-01"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "List your jobs",
+        "description": "Returns all migration jobs belonging to the authenticated user, sorted by creation date (newest first).",
+        "responses": {
+          "200": {
+            "description": "List of jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/JobListItem" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get job details",
+        "description": "Returns full details for a specific job, including analysis results, playbook, and training kit content if available.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JobResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/analyze": {
+      "post": {
+        "tags": ["Analysis"],
+        "summary": "Trigger AI analysis",
+        "description": "Enqueues AI analysis of the uploaded WPF files. The AI will detect:\n- **Patterns**: MVVM, code-behind heavy, resource dictionaries, custom controls\n- **Key views and ViewModels**\n- **Control inventory**: count of each WPF control type\n- **Risk assessment**: low / med / high\n- **Recommended approach** and work breakdown\n\nThe analysis runs asynchronously. Poll `GET /api/jobs/{jobId}` to check when `analysis` is populated.\n\nIf analysis already exists, returns immediately with a message.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analysis already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Analysis already exists" },
+                    "jobId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Analysis enqueued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Analysis enqueued" },
+                    "jobId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": {
+            "description": "Job is in a conflicting state",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/convert": {
+      "post": {
+        "tags": ["Conversion"],
+        "summary": "Trigger AI conversion",
+        "description": "Enqueues AI conversion of WPF files to Blazor components.\n\nIf no analysis exists, it will automatically run analysis first.\n\nThe AI converts:\n- XAML → Razor components (`.razor`)\n- Code-behind → `@code` blocks or `.razor.cs` partial classes\n- ViewModels → injectable services\n- Commands → event handlers\n- Bindings → `@bind` directives\n- Converters → utility methods\n\nOutput files are stored and can be retrieved via `GET /api/jobs/{jobId}/outputs` or downloaded as ZIP.\n\n**Runs asynchronously.** Poll `GET /api/jobs/{jobId}` until `status` is `Succeeded` or `Failed`.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "202": {
+            "description": "Conversion enqueued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Conversion enqueued" },
+                    "jobId": { "type": "string", "format": "uuid" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": {
+            "description": "Job is already being processed or already converted",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" },
+                "example": {
+                  "type": "https://httpstatuses.com/409",
+                  "title": "Conflict",
+                  "status": 409,
+                  "detail": "Job has already been converted.",
+                  "traceId": "00-abc123-def456-01"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/outputs": {
+      "get": {
+        "tags": ["Export"],
+        "summary": "List converted output files",
+        "description": "Returns all Blazor output files generated by the conversion. Each file includes its path and full content.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of output files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/JobFileResponse" }
+                },
+                "example": [
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440000",
+                    "kind": "output",
+                    "path": "Pages/MainWindow.razor",
+                    "content": "@page \"/\"\n\n<div class=\"container\">\n  <button @onclick=\"OnClick\">Click me</button>\n</div>\n\n@code {\n  private void OnClick() { }\n}",
+                    "createdAt": "2026-02-26T10:05:00Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/playbook": {
+      "post": {
+        "tags": ["Documents"],
+        "summary": "Generate migration playbook",
+        "description": "Generates an industrialized migration playbook in markdown format.\n\nThe playbook includes:\n- **Industrialized approach** (strategy, phases, team org)\n- **Tooling & guardrails** (CI/CD, linters, AI tools)\n- **Migration patterns** (WPF → Blazor mapping table)\n- **Code review checklist**\n- **QA checklist**\n- **Definition of Done**\n- **Troubleshooting guide**\n\n**Runs asynchronously.** Poll `GET /api/jobs/{jobId}` until `playbookMd` is populated.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "description": "Language for the playbook content",
+            "schema": {
+              "type": "string",
+              "enum": ["fr", "nl"],
+              "default": "fr"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Playbook generation enqueued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Playbook generation enqueued" },
+                    "jobId": { "type": "string", "format": "uuid" },
+                    "lang": { "type": "string", "example": "fr" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/training": {
+      "post": {
+        "tags": ["Documents"],
+        "summary": "Generate training kit",
+        "description": "Generates a 90-minute training kit in markdown format.\n\nThe training kit includes:\n- **90-min session agenda** with time allocations\n- **Hands-on exercises** using converted files from this job\n- **Common pitfalls** with wrong vs correct code examples\n- **FAQ** (10+ questions)\n- **Bilingual glossary** (FR/NL or NL/FR depending on lang)\n\n**Runs asynchronously.** Poll `GET /api/jobs/{jobId}` until `trainingMd` is populated.",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "description": "Language for the training kit content",
+            "schema": {
+              "type": "string",
+              "enum": ["fr", "nl"],
+              "default": "fr"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Training kit generation enqueued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Training kit generation enqueued" },
+                    "jobId": { "type": "string", "format": "uuid" },
+                    "lang": { "type": "string", "example": "nl" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/download": {
+      "get": {
+        "tags": ["Export"],
+        "summary": "Download outputs as ZIP",
+        "description": "Downloads all converted output files, plus the playbook and training kit (if generated), as a single ZIP archive.\n\nZIP structure:\n```\n{jobName}-blazor-output.zip\n├── Pages/\n│   ├── MainWindow.razor\n│   └── ...\n├── Services/\n│   └── ...\n├── playbook.md        (if generated)\n└── training-kit.md    (if generated)\n```",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP file download",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No output files available",
+            "content": {
+              "application/problem+json": {
+                "schema": { "$ref": "#/components/schemas/ProblemDetails" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/jobs/{jobId}/logs": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get job processing logs",
+        "description": "Returns all processing logs for a job, sorted chronologically. Use this to track progress of async operations (analysis, conversion, etc.).",
+        "parameters": [
+          { "$ref": "#/components/parameters/jobId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of log entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LogEntry" }
+                },
+                "example": [
+                  { "id": "a1b2c3d4-0000-0000-0000-000000000001", "ts": "2026-02-26T10:00:00Z", "level": "info", "message": "Job created with 3 input files" },
+                  { "id": "a1b2c3d4-0000-0000-0000-000000000002", "ts": "2026-02-26T10:00:01Z", "level": "info", "message": "Analysis enqueued" },
+                  { "id": "a1b2c3d4-0000-0000-0000-000000000003", "ts": "2026-02-26T10:00:02Z", "level": "info", "message": "Starting analysis" },
+                  { "id": "a1b2c3d4-0000-0000-0000-000000000004", "ts": "2026-02-26T10:00:03Z", "level": "info", "message": "Sending 3 files to AI for analysis" },
+                  { "id": "a1b2c3d4-0000-0000-0000-000000000005", "ts": "2026-02-26T10:00:15Z", "level": "info", "message": "Analysis completed" }
+                ]
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Supabase access token. Obtain via `supabase.auth.signInWithPassword()` or any Supabase auth method.\n\n```js\nconst { data } = await supabase.auth.signInWithPassword({\n  email: 'user@example.com',\n  password: 'password'\n});\nconst token = data.session.access_token;\n```"
+      }
+    },
+    "parameters": {
+      "jobId": {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "description": "UUID of the migration job",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "example": "550e8400-e29b-41d4-a716-446655440000"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid authentication token",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/ProblemDetails" },
+            "example": {
+              "type": "https://httpstatuses.com/401",
+              "title": "Unauthorized",
+              "status": 401,
+              "detail": "Missing or invalid token",
+              "traceId": "00-abc123-def456-01"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "You do not own this job",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/ProblemDetails" },
+            "example": {
+              "type": "https://httpstatuses.com/403",
+              "title": "Forbidden",
+              "status": 403,
+              "detail": "You do not have access to this job.",
+              "traceId": "00-abc123-def456-01"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Job not found",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/ProblemDetails" },
+            "example": {
+              "type": "https://httpstatuses.com/404",
+              "title": "Not Found",
+              "status": 404,
+              "detail": "Job 550e8400-e29b-41d4-a716-446655440000 not found.",
+              "traceId": "00-abc123-def456-01"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CreateJobRequest": {
+        "type": "object",
+        "required": ["name", "target", "files"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for this migration job",
+            "example": "MyWpfApp"
+          },
+          "target": {
+            "type": "string",
+            "enum": ["BlazorServer", "BlazorWasm"],
+            "description": "Target Blazor hosting model"
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "WPF source files to migrate",
+            "items": { "$ref": "#/components/schemas/FileInput" }
+          }
+        }
+      },
+      "FileInput": {
+        "type": "object",
+        "required": ["path", "content"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative file path (no `..` traversal, no absolute paths). Allowed extensions: `.xaml`, `.cs`, `.resx`, `.csproj`, `.sln`, `.config`, `.json`, `.xml`, `.razor`, `.css`",
+            "example": "Views/MainWindow.xaml"
+          },
+          "content": {
+            "type": "string",
+            "description": "Full text content of the file (max 1MB)",
+            "example": "<Window xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><Grid/></Window>"
+          }
+        }
+      },
+      "JobResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "example": "MyWpfApp" },
+          "target": { "type": "string", "enum": ["BlazorServer", "BlazorWasm"] },
+          "status": {
+            "type": "string",
+            "enum": ["Created", "Analyzing", "Converting", "Succeeded", "Failed"],
+            "description": "Current processing status"
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message if status is Failed"
+          },
+          "analysis": {
+            "nullable": true,
+            "description": "AI analysis results (null until analysis completes)",
+            "$ref": "#/components/schemas/AnalysisResult"
+          },
+          "playbookMd": {
+            "type": "string",
+            "nullable": true,
+            "description": "Generated playbook in markdown (null until generated)"
+          },
+          "trainingMd": {
+            "type": "string",
+            "nullable": true,
+            "description": "Generated training kit in markdown (null until generated)"
+          }
+        }
+      },
+      "JobListItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "target": { "type": "string" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "JobFileResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "kind": { "type": "string", "enum": ["input", "output"] },
+          "path": { "type": "string", "example": "Pages/MainWindow.razor" },
+          "content": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "LogEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "ts": { "type": "string", "format": "date-time" },
+          "level": { "type": "string", "enum": ["info", "warn", "error"] },
+          "message": { "type": "string" }
+        }
+      },
+      "AnalysisResult": {
+        "type": "object",
+        "description": "AI analysis output",
+        "properties": {
+          "detected_patterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["MVVM", "code-behind heavy", "resource dictionaries"]
+          },
+          "key_views": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["MainWindow.xaml", "SettingsView.xaml"]
+          },
+          "key_viewmodels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "example": ["MainViewModel.cs", "SettingsViewModel.cs"]
+          },
+          "control_inventory": {
+            "type": "object",
+            "additionalProperties": { "type": "integer" },
+            "example": { "DataGrid": 3, "Button": 15, "TextBox": 8, "ListView": 2 }
+          },
+          "estimated_risk": {
+            "type": "string",
+            "enum": ["low", "med", "high"]
+          },
+          "recommended_approach": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "suggested_work_breakdown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": { "type": "string" },
+                "description": { "type": "string" },
+                "effort_days": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "description": "RFC 7807 Problem Details error response",
+        "properties": {
+          "type": { "type": "string", "example": "https://httpstatuses.com/400" },
+          "title": { "type": "string", "example": "Validation Error" },
+          "status": { "type": "integer", "example": 400 },
+          "detail": { "type": "string", "nullable": true },
+          "traceId": { "type": "string", "example": "00-abc123-def456-01" }
+        }
+      }
+    }
+  }
+}
