@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      context: ./src/Api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - PORT=8080
+    restart: unless-stopped
