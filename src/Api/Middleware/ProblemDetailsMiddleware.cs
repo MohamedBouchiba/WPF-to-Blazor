@@ -44,7 +44,7 @@ public class ProblemDetailsMiddleware
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception");
-            await WriteError(context, 500, "Internal Server Error", null);
+            await WriteError(context, 500, "Internal Server Error", ex.Message);
         }
     }
 
