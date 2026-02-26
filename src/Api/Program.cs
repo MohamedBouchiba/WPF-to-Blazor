@@ -120,31 +120,18 @@ static string BuildConnectionString(SupabaseSettings settings)
 
         var uri = new Uri(dbUrl.Replace("postgres://", "http://").Replace("postgresql://", "http://"));
         var userInfo = uri.UserInfo.Split(':');
-        var user = userInfo[0];
-        var pass = userInfo.Length > 1 ? userInfo[1] : "";
+        var user = Uri.UnescapeDataString(userInfo[0]);
+        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
         var db = uri.AbsolutePath.TrimStart('/');
+        if (string.IsNullOrEmpty(db)) db = "postgres";
         var sslMode = dbUrl.Contains("sslmode=") ? "" : ";SSL Mode=Prefer";
-        var resolvedHost = ResolveToIpv4(uri.Host);
-        return $"Host={resolvedHost};Port={uri.Port};Database={db};Username={user};Password={pass}{sslMode};Trust Server Certificate=true";
+        return $"Host={uri.Host};Port={uri.Port};Database={db};Username={user};Password={pass}{sslMode};Trust Server Certificate=true";
     }
 
     var supaUri = new Uri(settings.Url);
     var host = $"db.{supaUri.Host.Replace(".supabase.co", "")}.supabase.co";
     var password = Environment.GetEnvironmentVariable("SUPABASE_DB_PASSWORD") ?? "postgres";
     return $"Host={host};Port=5432;Database=postgres;Username=postgres;Password={password};SSL Mode=Require;Trust Server Certificate=true";
-}
-
-static string ResolveToIpv4(string hostname)
-{
-    try
-    {
-        var addresses = System.Net.Dns.GetHostAddresses(hostname);
-        var ipv4 = addresses.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-        if (ipv4 != null)
-            return ipv4.ToString();
-    }
-    catch { }
-    return hostname;
 }
 
 public partial class Program { }
