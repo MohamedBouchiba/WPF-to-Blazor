@@ -23,6 +23,15 @@ public class SupabaseRestRepository : IJobRepository
         _http.DefaultRequestHeaders.Add("Prefer", "return=representation");
     }
 
+    private static async Task EnsureSuccess(HttpResponseMessage resp)
+    {
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Supabase {(int)resp.StatusCode}: {body}");
+        }
+    }
+
     public async Task<Job> CreateJobAsync(Job job)
     {
         job.Id = Guid.NewGuid();
@@ -31,7 +40,7 @@ public class SupabaseRestRepository : IJobRepository
 
         var body = JsonSerializer.Serialize(job, _jsonOpts);
         var resp = await _http.PostAsync("/rest/v1/jobs", new StringContent(body, Encoding.UTF8, "application/json"));
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         var items = JsonSerializer.Deserialize<List<Job>>(json, _jsonOpts);
@@ -41,7 +50,7 @@ public class SupabaseRestRepository : IJobRepository
     public async Task<Job?> GetJobAsync(Guid jobId)
     {
         var resp = await _http.GetAsync($"/rest/v1/jobs?id=eq.{jobId}&select=*");
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         var items = JsonSerializer.Deserialize<List<Job>>(json, _jsonOpts);
@@ -51,7 +60,7 @@ public class SupabaseRestRepository : IJobRepository
     public async Task<List<Job>> GetJobsByUserAsync(Guid userId)
     {
         var resp = await _http.GetAsync($"/rest/v1/jobs?user_id=eq.{userId}&select=id,user_id,name,target,status,created_at,updated_at,error&order=created_at.desc");
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<List<Job>>(json, _jsonOpts) ?? [];
@@ -74,7 +83,7 @@ public class SupabaseRestRepository : IJobRepository
         using var req = new HttpRequestMessage(HttpMethod.Patch, $"/rest/v1/jobs?id=eq.{job.Id}");
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
         var resp = await _http.SendAsync(req);
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
     }
 
     public async Task<bool> TryLockJobForProcessingAsync(Guid jobId, string fromStatus, string toStatus)
@@ -85,7 +94,7 @@ public class SupabaseRestRepository : IJobRepository
         req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
         req.Headers.Add("Prefer", "return=representation,count=exact");
         var resp = await _http.SendAsync(req);
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         var items = JsonSerializer.Deserialize<List<Job>>(json, _jsonOpts);
@@ -99,13 +108,13 @@ public class SupabaseRestRepository : IJobRepository
 
         var body = JsonSerializer.Serialize(file, _jsonOpts);
         var resp = await _http.PostAsync("/rest/v1/job_files", new StringContent(body, Encoding.UTF8, "application/json"));
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
     }
 
     public async Task<List<JobFile>> GetJobFilesByKindAsync(Guid jobId, string kind)
     {
         var resp = await _http.GetAsync($"/rest/v1/job_files?job_id=eq.{jobId}&kind=eq.{kind}&select=*&order=path");
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<List<JobFile>>(json, _jsonOpts) ?? [];
@@ -114,7 +123,7 @@ public class SupabaseRestRepository : IJobRepository
     public async Task<List<JobFile>> GetAllJobFilesAsync(Guid jobId)
     {
         var resp = await _http.GetAsync($"/rest/v1/job_files?job_id=eq.{jobId}&select=*&order=kind,path");
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<List<JobFile>>(json, _jsonOpts) ?? [];
@@ -129,13 +138,13 @@ public class SupabaseRestRepository : IJobRepository
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");
         req.Headers.Remove("Prefer");
         var resp = await _http.SendAsync(req);
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
     }
 
     public async Task<List<JobLog>> GetLogsAsync(Guid jobId)
     {
         var resp = await _http.GetAsync($"/rest/v1/job_logs?job_id=eq.{jobId}&select=*&order=ts");
-        resp.EnsureSuccessStatusCode();
+        await EnsureSuccess(resp);
 
         var json = await resp.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<List<JobLog>>(json, _jsonOpts) ?? [];
