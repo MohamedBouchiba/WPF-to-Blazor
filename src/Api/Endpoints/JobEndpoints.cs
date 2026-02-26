@@ -46,12 +46,14 @@ public static class JobEndpoints
 
         validator.Validate(request.Files);
 
+        var targetMode = request.Target == "BlazorWasm" ? "blazor-wasm" : "blazor-server";
+
         var job = await repo.CreateJobAsync(new Job
         {
             UserId = userId,
             Name = request.Name,
             Target = request.Target,
-            TargetMode = request.Target
+            TargetMode = targetMode
         });
 
         foreach (var file in request.Files)
