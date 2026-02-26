@@ -36,7 +36,7 @@ public class JobCreationTests : IClassFixture<TestWebAppFactory>
         Assert.NotNull(job);
         Assert.Equal("My WPF App", job.Name);
         Assert.Equal("BlazorServer", job.Target);
-        Assert.Equal("Created", job.Status);
+        Assert.Equal("created", job.Status);
     }
 
     [Fact]

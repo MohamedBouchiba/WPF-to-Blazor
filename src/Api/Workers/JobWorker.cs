@@ -56,7 +56,7 @@ public class JobWorker : BackgroundService
                     var job = await repo.GetJobAsync(task.JobId);
                     if (job != null)
                     {
-                        job.Status = "Failed";
+                        job.Status = "failed";
                         job.Error = ex.Message;
                         await repo.UpdateJobAsync(job);
                         await repo.AddLogAsync(task.JobId, "error", ex.Message);
@@ -72,9 +72,9 @@ public class JobWorker : BackgroundService
 
     private async Task RunAnalyzeAsync(Guid jobId, IJobRepository repo, IAiClient ai, CancellationToken ct)
     {
-        if (!await repo.TryLockJobForProcessingAsync(jobId, "Created", "Analyzing"))
+        if (!await repo.TryLockJobForProcessingAsync(jobId, "created", "analyzing"))
         {
-            _logger.LogWarning("Job {JobId} is not in Created state, skipping analyze", jobId);
+            _logger.LogWarning("Job {JobId} is not in created state, skipping analyze", jobId);
             return;
         }
 
@@ -94,7 +94,7 @@ public class JobWorker : BackgroundService
         if (job == null) return;
 
         job.Analysis = result;
-        job.Status = "Created";
+        job.Status = "created";
         await repo.UpdateJobAsync(job);
         await repo.AddLogAsync(jobId, "info", "Analysis completed");
     }
@@ -112,9 +112,9 @@ public class JobWorker : BackgroundService
             if (job == null) return;
         }
 
-        if (!await repo.TryLockJobForProcessingAsync(jobId, "Created", "Converting"))
+        if (!await repo.TryLockJobForProcessingAsync(jobId, "created", "converting"))
         {
-            _logger.LogWarning("Job {JobId} is not in Created state, skipping convert", jobId);
+            _logger.LogWarning("Job {JobId} is not in created state, skipping convert", jobId);
             return;
         }
 
@@ -137,18 +137,23 @@ public class JobWorker : BackgroundService
 
         foreach (var (path, content) in parsedFiles)
         {
+            var filename = System.IO.Path.GetFileName(path);
+            var ext = System.IO.Path.GetExtension(filename).TrimStart('.').ToLowerInvariant();
+
             await repo.CreateJobFileAsync(new JobFile
             {
                 JobId = jobId,
                 Kind = "output",
                 Path = path,
+                Filename = filename,
+                FileType = string.IsNullOrEmpty(ext) ? "razor" : ext,
                 Content = content
             });
         }
 
         job = await repo.GetJobAsync(jobId);
         if (job == null) return;
-        job.Status = "Succeeded";
+        job.Status = "succeeded";
         await repo.UpdateJobAsync(job);
         await repo.AddLogAsync(jobId, "info", "Conversion completed");
     }

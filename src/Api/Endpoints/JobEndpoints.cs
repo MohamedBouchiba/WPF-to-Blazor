@@ -50,16 +50,23 @@ public static class JobEndpoints
         {
             UserId = userId,
             Name = request.Name,
-            Target = request.Target
+            Target = request.Target,
+            TargetMode = request.Target
         });
 
         foreach (var file in request.Files)
         {
+            var normalizedPath = file.Path.Replace("\\", "/");
+            var filename = System.IO.Path.GetFileName(normalizedPath);
+            var ext = System.IO.Path.GetExtension(filename).TrimStart('.').ToLowerInvariant();
+
             await repo.CreateJobFileAsync(new JobFile
             {
                 JobId = job.Id,
                 Kind = "input",
-                Path = file.Path.Replace("\\", "/"),
+                Path = normalizedPath,
+                Filename = filename,
+                FileType = string.IsNullOrEmpty(ext) ? "txt" : ext,
                 Content = file.Content
             });
         }
@@ -106,7 +113,7 @@ public static class JobEndpoints
         if (!string.IsNullOrEmpty(job.Analysis))
             return Results.Ok(new { message = "Analysis already exists", jobId });
 
-        if (job.Status != "Created")
+        if (job.Status != "created")
             throw new Middleware.ConflictException($"Job is in status {job.Status}, cannot analyze.");
 
         await queue.EnqueueAsync(new JobTask(jobId, "analyze"));
@@ -119,10 +126,10 @@ public static class JobEndpoints
     {
         var job = await GetOwnedJob(jobId, user, repo);
 
-        if (job.Status == "Converting" || job.Status == "Analyzing")
+        if (job.Status == "converting" || job.Status == "analyzing")
             throw new Middleware.ConflictException($"Job is already being processed (status: {job.Status}).");
 
-        if (job.Status == "Succeeded")
+        if (job.Status == "succeeded")
             throw new Middleware.ConflictException("Job has already been converted.");
 
         await queue.EnqueueAsync(new JobTask(jobId, "convert"));
