@@ -47,8 +47,8 @@ builder.Services.AddSingleton(aiSettings);
 builder.Services.AddSingleton(storageSettings);
 builder.Services.AddSingleton(appSettings);
 
-var connectionString = BuildConnectionString(supabaseSettings);
-builder.Services.AddScoped<IJobRepository>(_ => new JobRepository(connectionString));
+builder.Services.AddSingleton<IJobRepository>(
+    new SupabaseRestRepository(supabaseSettings.Url, supabaseSettings.ServiceRoleKey));
 
 builder.Services.AddSingleton<FileValidator>(_ => new FileValidator(appSettings.MaxFileBytes, appSettings.MaxFilesPerJob));
 
@@ -109,29 +109,5 @@ app.MapJobEndpoints();
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
-
-static string BuildConnectionString(SupabaseSettings settings)
-{
-    var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
-    if (!string.IsNullOrEmpty(dbUrl))
-    {
-        if (dbUrl.StartsWith("Host=") || dbUrl.StartsWith("Server="))
-            return dbUrl;
-
-        var uri = new Uri(dbUrl.Replace("postgres://", "http://").Replace("postgresql://", "http://"));
-        var userInfo = uri.UserInfo.Split(':');
-        var user = Uri.UnescapeDataString(userInfo[0]);
-        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
-        var db = uri.AbsolutePath.TrimStart('/');
-        if (string.IsNullOrEmpty(db)) db = "postgres";
-        var sslMode = dbUrl.Contains("sslmode=") ? "" : ";SSL Mode=Prefer";
-        return $"Host={uri.Host};Port={uri.Port};Database={db};Username={user};Password={pass}{sslMode};Trust Server Certificate=true";
-    }
-
-    var supaUri = new Uri(settings.Url);
-    var host = $"db.{supaUri.Host.Replace(".supabase.co", "")}.supabase.co";
-    var password = Environment.GetEnvironmentVariable("SUPABASE_DB_PASSWORD") ?? "postgres";
-    return $"Host={host};Port=5432;Database=postgres;Username=postgres;Password={password};SSL Mode=Require;Trust Server Certificate=true";
-}
 
 public partial class Program { }
